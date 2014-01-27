@@ -93,6 +93,11 @@ eval (UVar m i) = f <$> variable m i
 
 eval (UFun m f) = (::: TFun) <$> function m f
 
+eval (UApp m (UFun _ (Id "exists")) e) = do
+    e' ::: et <- eval e
+    Shw       <- shw m et
+    return $ Text.pack (show e') ::: TText
+
 eval (UApp m (UFun _ (Id "show")) e) = do
     e' ::: et <- eval e
     Shw       <- shw m et
@@ -121,13 +126,16 @@ eval (UApp m a b) = do
   where
     f x = eval x >>= build m
 
-eval (UNeg _ e) = do
-    e' ::: TBool <- predicate e
+eval (UNeg m e) = do
+    e' ::: et <- eval e
+    Eq <- equal m et TBool
     return $ not e' ::: TBool
 
-eval (UBin _ op a b) = do
-    a' ::: TBool <- predicate a
-    b' ::: TBool <- predicate b
+eval (UBin m op a b) = do
+    a' ::: at <- eval a
+    b' ::: bt <- eval b
+    Eq <- equal m at TBool
+    Eq <- equal m bt TBool
     return $ f op a' b' ::: TBool
   where
     f And = (&&)
@@ -147,9 +155,18 @@ eval (URel m op a b) = do
     f Less         = (<)
     f LessEqual    = (<=)
 
-eval (UCond _ p a b) = do
-    p' ::: TBool <- predicate p
+eval (UCond m p a b) = do
+    p' ::: pt <- eval p
+    Eq <- equal m pt TBool
     eval $ if p' then a else b
+  where
+    predicate :: UExp -> Context TExp
+    predicate = mapReaderT (return . (::: TBool) . f) . eval
+      where
+        f (Success (_ ::: TNil))  = False
+        f (Success (p ::: TBool)) = p
+        f (Success _)             = True
+        f _                       = False
 
 eval (UCase _ c as b) = do
     c' <- eval c
@@ -215,6 +232,37 @@ loop k a _ (Col l xs) = fmap ((::: TBld) . snd) $ foldlM iter (1, mempty) xs
             g   = throw  (_meta a) "binding {} shadows existing variable {}." . f
         in ask >>= maybe (return ()) g . Map.lookup k . _variables
 
+bind :: (Object -> Object) -> UExp -> Context TExp
+bind f = withReaderT (\x -> x { _variables = f $ _variables x }) . eval
+
+variable :: Meta -> Id -> Context Value
+variable m (Id k) = do
+    mv <- Map.lookup k . _variables <$> ask
+    maybe (throw m "binding {} doesn't exist." [k]) return mv
+
+function :: Meta -> Id -> Context Fun
+function m (Id k) = do
+    mf <- Map.lookup k . _filters <$> ask
+    maybe (throw m "filter {} doesn't exist." [k]) return mf
+
+template :: Meta -> Text -> Context UExp
+template m k = do
+    ts <- _templates <$> ask
+    maybe (throw m "template {} is not in scope: {}" [k, Text.intercalate "," $ Map.keys ts])
+          return
+          (Map.lookup k ts)
+
+build :: Meta -> TExp -> Context TExp
+build _ (_ ::: TNil)  = return $ mempty ::: TBld
+build _ (t ::: TText) = return $ Build.build t ::: TBld
+build _ (b ::: TBool) = return $ Build.build b ::: TBld
+build _ (n ::: TNum)  = return $ scientificBuilder n ::: TBld
+build _ (b ::: TBld)  = return $ b ::: TBld
+build m (_ ::: t)     = throw m "unable to render variable of type {}" [show t]
+
+throw :: Params ps => Meta -> Format -> ps -> Context a
+throw m f = lift . throwError m f
+
 equal :: Meta -> TType a -> TType b -> Context (Equal a b)
 equal _ TNil  TNil  = return Eq
 equal _ TText TText = return Eq
@@ -250,42 +298,3 @@ js _ TNum  = return JS
 js _ TMap  = return JS
 js _ TList = return JS
 js m t = throw m "constraint check of ToJSON a => a ~ {} failed." [show t]
-
-bind :: (Object -> Object) -> UExp -> Context TExp
-bind f = withReaderT (\x -> x { _variables = f $ _variables x }) . eval
-
-predicate :: UExp -> Context TExp
-predicate = mapReaderT (return . (::: TBool) . f) . eval
-  where
-    f (Success (_ ::: TNil))  = False
-    f (Success (p ::: TBool)) = p
-    f (Success _)             = True
-    f _                       = False
-
-variable :: Meta -> Id -> Context Value
-variable m (Id k) = do
-    mv <- Map.lookup k . _variables <$> ask
-    maybe (throw m "binding {} doesn't exist." [k]) return mv
-
-function :: Meta -> Id -> Context Fun
-function m (Id k) = do
-    mf <- Map.lookup k . _filters <$> ask
-    maybe (throw m "filter {} doesn't exist." [k]) return mf
-
-template :: Meta -> Text -> Context UExp
-template m k = do
-    ts <- _templates <$> ask
-    maybe (throw m "template {} is not in scope: {}" [k, Text.intercalate "," $ Map.keys ts])
-          return
-          (Map.lookup k ts)
-
-build :: Meta -> TExp -> Context TExp
-build _ (_ ::: TNil)  = return $ mempty ::: TBld
-build _ (t ::: TText) = return $ Build.build t ::: TBld
-build _ (b ::: TBool) = return $ Build.build b ::: TBld
-build _ (n ::: TNum)  = return $ scientificBuilder n ::: TBld
-build _ (b ::: TBld)  = return $ b ::: TBld
-build m (_ ::: t)     = throw m "unable to render variable of type {}" [show t]
-
-throw :: Params ps => Meta -> Format -> ps -> Context a
-throw m f = lift . throwError m f

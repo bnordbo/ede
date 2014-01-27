@@ -48,19 +48,26 @@ import qualified Data.Vector                as Vector
 import           Text.EDE.Internal.Types
 
 -- FIXME: Create polymorphic filters
+-- change filters to prefix + parens
+-- empty
+-- exists
+-- show
+-- length
+
 defaultFilters :: HashMap Text Fun
 defaultFilters = Map.fromList
-    [ ("lower",       Fun TText TText lower)
-    , ("upper",       Fun TText TText upper)
-    , ("lowerFirst",  Fun TText TText lowerFirst)
-    , ("upperFirst",  Fun TText TText upperFirst)
-    , ("titleize",    Fun TText TText titleize)
-    , ("pascalize",   Fun TText TText pascalize)
-    , ("camelize",    Fun TText TText camelize)
-    , ("underscore",  Fun TText TText underscore)
-    , ("hyphenate",   Fun TText TText hyphenate)
-    , ("listLength",  Fun TList TNum  listLength)
-    , ("mapLength",   Fun TMap  TNum  mapLength)
+    [ ("lower",      Fun TText TText lower)
+    , ("upper",      Fun TText TText upper)
+    , ("lowerFirst", Fun TText TText lowerFirst)
+    , ("upperFirst", Fun TText TText upperFirst)
+    , ("titleize",   Fun TText TText titleize)
+    , ("pascalize",  Fun TText TText pascalize)
+    , ("camelize",   Fun TText TText camelize)
+    , ("underscore", Fun TText TText underscore)
+    , ("hyphenate",  Fun TText TText hyphenate)
+    , ("listLength", Fun TList TNum  listLength)
+    , ("listEmpty",  Fun TList TNum  listLength)
+    , ("mapLength",  Fun TMap  TNum  mapLength)
     ]
 
 lower :: Text -> Text
